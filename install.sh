@@ -13,15 +13,28 @@ STATE_DIR="$HOME/.dmux/state"
 PREV_NOTIFY_FILE="$STATE_DIR/previous-codex-notify.txt"
 DMUX_SUBSTR="dmux-event.sh"
 
-MODE="${1:-install}"
-case "$MODE" in
-    install|--install) MODE=install ;;
-    uninstall|--uninstall) MODE=uninstall ;;
-    *)
-        printf '\nUsage: %s [install | --uninstall]\n\n' "$0" >&2
-        exit 2
-        ;;
-esac
+MODE=""
+ASSUME_YES="${DMUX_YES:-0}"
+for arg in "$@"; do
+    case "$arg" in
+        install|--install)         MODE=install ;;
+        uninstall|--uninstall)     MODE=uninstall ;;
+        -y|--yes)                  ASSUME_YES=1 ;;
+        -h|--help)
+            printf '\nUsage: %s [install | --uninstall] [--yes]\n\n' "$0"
+            printf '  --yes, -y    Non-interactive (assume "yes" to confirmation prompt).\n'
+            printf '               Same as setting DMUX_YES=1 in the environment.\n'
+            printf '               Required for unattended use (CI, AI agents, scripts).\n\n'
+            exit 0
+            ;;
+        *)
+            printf '\nUnknown argument: %s\n' "$arg" >&2
+            printf 'Usage: %s [install | --uninstall] [--yes]\n\n' "$0" >&2
+            exit 2
+            ;;
+    esac
+done
+[ -n "$MODE" ] || MODE=install
 
 c_bold=$'\033[1m'; c_ok=$'\033[32m'; c_skip=$'\033[33m'; c_dim=$'\033[2m'; c_off=$'\033[0m'
 say()    { printf '%s\n' "$*"; }
@@ -207,7 +220,12 @@ if [ "$MODE" = "install" ]; then
 else
     printf '\n  %s? %sProceed with %suninstall%s for the agents above? [Y/n] ' "$c_bold" "$c_off" "$c_bold" "$c_off"
 fi
-read -r ANS || ANS=""
+if [ "$ASSUME_YES" = "1" ]; then
+    printf 'y (auto via --yes / DMUX_YES)\n'
+    ANS="y"
+else
+    read -r ANS || ANS=""
+fi
 case "${ANS:-Y}" in
     n|N|no|No|NO) say "Aborted."; exit 0 ;;
 esac
