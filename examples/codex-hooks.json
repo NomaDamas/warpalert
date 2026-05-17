@@ -1,0 +1,21 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          { "type": "command",
+            "command": "$HOME/.warp-agent-hooks/hooks/warp-agent-event.sh session_start codex" }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          { "type": "command",
+            "command": "$HOME/.warp-agent-hooks/hooks/warp-agent-event.sh permission_request codex" }
+        ]
+      }
+    ]
+  }
+}

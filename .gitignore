@@ -1,0 +1,8 @@
+*.log
+*.log.1
+.warp-agent-event.log.lock
+.DS_Store
+node_modules/
+*.swp
+*.bak
+*.bak-*

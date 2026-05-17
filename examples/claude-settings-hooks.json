@@ -1,0 +1,40 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command",
+            "command": "$HOME/.warp-agent-hooks/hooks/warp-agent-event.sh session_start claude" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command",
+            "command": "$HOME/.warp-agent-hooks/hooks/warp-agent-event.sh stop claude" }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command",
+            "command": "$HOME/.warp-agent-hooks/hooks/warp-agent-event.sh idle_prompt claude" }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command",
+            "command": "$HOME/.warp-agent-hooks/hooks/warp-agent-event.sh permission_request claude" }
+        ]
+      }
+    ]
+  }
+}

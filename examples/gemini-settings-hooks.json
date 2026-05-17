@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "session_start": [
+      {
+        "command": "$HOME/.warp-agent-hooks/hooks/warp-agent-event.sh session_start gemini"
+      }
+    ],
+    "stop": [
+      {
+        "command": "$HOME/.warp-agent-hooks/hooks/warp-agent-event.sh stop gemini"
+      }
+    ],
+    "user_prompt_submit": [
+      {
+        "command": "$HOME/.warp-agent-hooks/hooks/warp-agent-event.sh prompt_submit gemini"
+      }
+    ]
+  }
+}

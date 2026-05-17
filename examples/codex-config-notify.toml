@@ -1,0 +1,18 @@
+# Top-level notify directive for ~/.codex/config.toml
+#
+# Codex CLI calls this on every "agent-turn-complete", "ask-user-question",
+# "session-idle", "session-end", and "session-start" event with the event JSON
+# as the LAST argv argument. The bridge maps each to the corresponding
+# warp-agent-event.sh event and emits the OSC sequences.
+
+notify = ["/home/youruser/.warp-agent-hooks/hooks/codex-notify-bridge.sh"]
+
+# If you already had a previous notify handler (e.g. oh-my-codex's
+# notify-hook.js) and want the bridge to ALSO invoke it, export this in your
+# shell or before launching codex:
+#
+#   export WARP_AGENT_CODEX_NOTIFY_INNER=/path/to/previous/notify-hook.js
+#
+# The bridge runs the inner handler synchronously (its state contract must
+# complete before the next codex turn begins) and fires warp-agent-event.sh
+# as fire-and-forget in parallel.

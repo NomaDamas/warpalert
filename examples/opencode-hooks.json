@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command",
+            "command": "$HOME/.warp-agent-hooks/hooks/warp-agent-event.sh session_start opencode" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command",
+            "command": "$HOME/.warp-agent-hooks/hooks/warp-agent-event.sh stop opencode" }
+        ]
+      }
+    ]
+  }
+}
