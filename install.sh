@@ -116,12 +116,43 @@ set_codex_notify() {
         fi
         ok "codex notify exists — saved for restore on uninstall"
         note "    previous: $current"
+        # Parse the inline argv array out of the TOML notify line and persist
+        # it to a state file so the bridge can auto-chain without the user
+        # having to set DMUX_CODEX_INNER by hand.
         local inner
         inner="$(echo "$current" | sed -E 's/^[^=]*=[[:space:]]*\[(.*)\][[:space:]]*$/\1/' | tr -d '"' | sed 's/,//g')"
         local inner_path
         inner_path="$(echo "$inner" | awk '{for(i=1;i<=NF;i++){if($i~/\//){print $i;exit}}}')"
+        # Persist parsed argv (one token per line) for bridge auto-chain.
+        # We use python3 when available for proper TOML-array parsing,
+        # otherwise fall back to a shell tokenization good enough for the
+        # common `notify = ["node", "/path/to/x.js"]` shape.
+        local argv_file="$STATE_DIR/codex-inner.argv"
+        if command -v python3 >/dev/null 2>&1; then
+            python3 - "$current" "$argv_file" <<'PY'
+import os, re, sys
+line = sys.argv[1]
+out = sys.argv[2]
+m = re.search(r'=\s*\[(.*)\]\s*$', line)
+if not m:
+    sys.exit(0)
+body = m.group(1)
+tokens = re.findall(r'"((?:[^"\\]|\\.)*)"', body)
+if not tokens:
+    sys.exit(0)
+os.makedirs(os.path.dirname(out), exist_ok=True)
+with open(out, 'w') as f:
+    for t in tokens:
+        f.write(t + '\n')
+PY
+        else
+            printf '%s\n' "$inner" | tr -s ' ' '\n' | sed '/^$/d' > "$argv_file"
+        fi
         sed -i -E 's|^[[:space:]]*notify[[:space:]]*=.*|notify = ["'"$target"'"]|' "$CODEX_CONFIG"
-        if [ -n "$inner_path" ] && [ -f "$inner_path" ]; then
+        if [ -s "$argv_file" ]; then
+            ok "codex notify chained — previous handler will fire alongside DMUX"
+            note "    chain argv: $(tr '\n' ' ' < "$argv_file" | sed 's/ $//')"
+        elif [ -n "$inner_path" ] && [ -f "$inner_path" ]; then
             note "    chain via: export DMUX_CODEX_INNER=$inner_path"
         fi
     else
@@ -146,7 +177,7 @@ unset_codex_notify() {
         sed -i -E '\|^[[:space:]]*notify[[:space:]]*=.*dmux-codex-bridge\.sh.*|d' "$CODEX_CONFIG"
         ok "removed DMUX codex notify directive"
     fi
-    rm -f "$PREV_NOTIFY_FILE"
+    rm -f "$PREV_NOTIFY_FILE" "$STATE_DIR/codex-inner.argv"
 }
 
 detect() {
@@ -213,11 +244,53 @@ if [ "$MODE" = "install" ]; then
         ok "Gemini CLI wired"
     fi
 
+    # tmux requires `allow-passthrough on` (default off since tmux 3.3) for
+    # OSC 9 / OSC 777 sequences to reach Warp through a tmux pane. Without
+    # this DMUX writes the right bytes and tmux silently drops them.
+    if command -v tmux >/dev/null 2>&1; then
+        header "tmux passthrough"
+        TMUX_CONF="${TMUX_CONF:-$HOME/.tmux.conf}"
+        if [ -f "$TMUX_CONF" ] && grep -qE '^[[:space:]]*set(-option)?[[:space:]]+(-g[[:space:]]+)?allow-passthrough[[:space:]]+on' "$TMUX_CONF"; then
+            skip "allow-passthrough already enabled in $TMUX_CONF"
+        else
+            backup_once "$TMUX_CONF"
+            {
+                printf '\n# DMUX: required so OSC 9 / OSC 777 toasts reach Warp through tmux.\n'
+                printf 'set -g allow-passthrough on\n'
+            } >> "$TMUX_CONF"
+            ok "appended allow-passthrough on -> $TMUX_CONF"
+        fi
+        # Apply to every live tmux server right now so users don't have to
+        # source tmux.conf manually before their next session.
+        for sock in $(tmux ls -F '#{socket_path}' 2>/dev/null | sort -u); do
+            tmux -S "$sock" set -g allow-passthrough on >/dev/null 2>&1 || true
+        done
+        tmux set -g allow-passthrough on >/dev/null 2>&1 || true
+    fi
+
+    # Warn about agents that were already running before install — their
+    # hooks won't load until the process restarts.
+    RUNNING=""
+    for pat in 'claude' 'codex' 'opencode' 'gemini'; do
+        $WIRE_CLAUDE   || [ "$pat" != claude   ] || continue
+        $WIRE_CODEX    || [ "$pat" != codex    ] || continue
+        $WIRE_OPENCODE || [ "$pat" != opencode ] || continue
+        $WIRE_GEMINI   || [ "$pat" != gemini   ] || continue
+        if pgrep -af "(^|/)$pat( |$|--)" >/dev/null 2>&1; then
+            RUNNING="$RUNNING $pat"
+        fi
+    done
+    if [ -n "$RUNNING" ]; then
+        header "Heads up"
+        printf '  %s!%s Already-running agents detected:%s\n' "$c_skip" "$c_off" "$RUNNING"
+        printf '      Restart them so the new hooks load. Existing sessions will not fire toasts.\n'
+    fi
+
     header "Done"
     say "  Restart your agent sessions to pick up the new hooks."
     say ""
-    say "  Smoke test:"
-    printf '    %s%s stop claude <<< '"'"'{}'"'"'%s\n' "$c_dim" "$HOOK" "$c_off"
+    say "  Smoke test (must run in a real terminal, not piped):"
+    printf '    %s%s stop claude < /dev/tty%s\n' "$c_dim" "$HOOK" "$c_off"
     printf '    %stail -1 \$HOME/.dmux/dmux.log%s\n\n'   "$c_dim"        "$c_off"
 else
     header "Removing DMUX hooks"

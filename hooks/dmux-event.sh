@@ -297,11 +297,52 @@ if [ -z "$JSON" ]; then
     exit 0
 fi
 
+# Resolve a TTY the user is actually looking at. The original logic only
+# considered /dev/tty and the current pane's TTY, both of which can point at
+# a detached tmux pane (e.g. agents launched inside `tmux new-session -d` by
+# orchestration layers like OMX). When no client is attached to that pane,
+# OSC sequences die in the void. Walk through fallbacks in priority order:
+#   1. /dev/tty (interactive caller)
+#   2. $TMUX_PANE's pane_tty (the agent's own pane)
+#   3. any client TTY currently attached to the agent's tmux session
+#   4. any client TTY currently attached to any tmux session
+# Anything that's writable wins.
 OUT_TTY="/dev/tty"
-if ! { : >/dev/tty; } 2>/dev/null && [ -n "${TMUX_PANE:-}" ] && \
-     command -v tmux >/dev/null 2>&1; then
-    FB="$(tmux display-message -p -t "$TMUX_PANE" '#{pane_tty}' 2>/dev/null)"
-    if [ -n "$FB" ] && [ -w "$FB" ]; then OUT_TTY="$FB"; fi
+OUT_TTY_SOURCE="dev_tty"
+_try_tty() {
+    local candidate="$1" label="$2"
+    [ -n "$candidate" ] || return 1
+    [ -w "$candidate" ] || return 1
+    OUT_TTY="$candidate"
+    OUT_TTY_SOURCE="$label"
+    return 0
+}
+if ! { : >/dev/tty; } 2>/dev/null; then
+    OUT_TTY=""
+    if [ -n "${TMUX_PANE:-}" ] && command -v tmux >/dev/null 2>&1; then
+        _FB="$(tmux display-message -p -t "$TMUX_PANE" '#{pane_tty}' 2>/dev/null)"
+        _try_tty "$_FB" pane_tty || true
+    fi
+    if [ -z "$OUT_TTY" ] && command -v tmux >/dev/null 2>&1; then
+        _SESS=""
+        if [ -n "${TMUX_PANE:-}" ]; then
+            _SESS="$(tmux display-message -p -t "$TMUX_PANE" '#{session_name}' 2>/dev/null)"
+        fi
+        if [ -n "$_SESS" ]; then
+            while IFS= read -r _CT; do
+                _try_tty "$_CT" session_client && break
+            done < <(tmux list-clients -t "$_SESS" -F '#{client_tty}' 2>/dev/null)
+        fi
+    fi
+    if [ -z "$OUT_TTY" ] && command -v tmux >/dev/null 2>&1; then
+        while IFS= read -r _CT; do
+            _try_tty "$_CT" any_client && break
+        done < <(tmux list-clients -F '#{client_tty}' 2>/dev/null)
+    fi
+    if [ -z "$OUT_TTY" ]; then
+        OUT_TTY="/dev/tty"
+        OUT_TTY_SOURCE="dev_tty_unreachable"
+    fi
 fi
 
 ESC=$'\033'
@@ -310,6 +351,15 @@ ST=$'\033\\'
 
 wrap_for_tmux() {
     local seq="$1"
+    # Writing directly to an attached client's TTY bypasses tmux entirely,
+    # so we must NOT add the tmux passthrough wrapper in that case — Warp
+    # would see literal `\ePtmux;...` bytes instead of an OSC sequence.
+    case "$OUT_TTY_SOURCE" in
+        session_client|any_client)
+            printf '%s' "$seq"
+            return
+            ;;
+    esac
     if [ -n "${TMUX:-}" ]; then
         local doubled="${seq//$ESC/$ESC$ESC}"
         printf '%sPtmux;%s%s' "$ESC" "$doubled" "$ST"
@@ -335,9 +385,16 @@ emit_to_tty "$(wrap_for_tmux "$OSC777")"
 
 # OSC 9 desktop toast bodies. Customizable via env vars; substitute {project}
 # and {agent} placeholders.
-TOAST_STOP_TEMPLATE="${DMUX_TOAST_STOP:-✅ {project} — {agent} done}"
-TOAST_PERMISSION_TEMPLATE="${DMUX_TOAST_PERMISSION:-⚠️ {project} — {agent} needs input}"
-TOAST_IDLE_TEMPLATE="${DMUX_TOAST_IDLE:-💬 {project} — {agent} waiting}"
+# bash's ${VAR:-default} terminates at the first '}' in the default value,
+# so an inline default that contains '{project}' gets parsed as '{project'
+# plus a literal tail, which then breaks {project} substitution downstream.
+# Use a -z guard instead so braces inside the default stay intact.
+[ -z "${DMUX_TOAST_STOP:-}" ]       && DMUX_TOAST_STOP='✅ {project} — {agent} done'
+[ -z "${DMUX_TOAST_PERMISSION:-}" ] && DMUX_TOAST_PERMISSION='⚠️ {project} — {agent} needs input'
+[ -z "${DMUX_TOAST_IDLE:-}" ]       && DMUX_TOAST_IDLE='💬 {project} — {agent} waiting'
+TOAST_STOP_TEMPLATE="$DMUX_TOAST_STOP"
+TOAST_PERMISSION_TEMPLATE="$DMUX_TOAST_PERMISSION"
+TOAST_IDLE_TEMPLATE="$DMUX_TOAST_IDLE"
 
 _render_toast() {
     local tpl="$1"
@@ -361,6 +418,6 @@ fi
 if [ -n "$WRITE_ERR" ]; then
     _log_line "emit=fail tty=$OUT_TTY tmux=${TMUX:+y} tmux_pane=${TMUX_PANE:-<unset>} err=${WRITE_ERR:0:100}"
 else
-    _log_line "emit=ok proto=$PROTO_V tty=$OUT_TTY tmux=${TMUX:+y} tmux_pane=${TMUX_PANE:-<unset>} session_id=${SESSION_ID:-<none>} cwd=$CWD osc9='${OSC9_BODY:-<none>}'"
+    _log_line "emit=ok proto=$PROTO_V tty=$OUT_TTY tty_src=$OUT_TTY_SOURCE tmux=${TMUX:+y} tmux_pane=${TMUX_PANE:-<unset>} session_id=${SESSION_ID:-<none>} cwd=$CWD osc9='${OSC9_BODY:-<none>}'"
 fi
 exit 0

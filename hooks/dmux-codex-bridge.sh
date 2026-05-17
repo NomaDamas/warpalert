@@ -34,11 +34,13 @@ fi
 
 INNER_HOOK="${DMUX_CODEX_INNER:-}"
 INNER_INTERP="${DMUX_CODEX_INNER_INTERP:-}"
+INNER_ARGV_FILE="${DMUX_CODEX_INNER_ARGV_FILE:-$HOME/.dmux/state/codex-inner.argv}"
 
 PAYLOAD="${!#}"
 
 INNER_PID=""
 if [ -n "$INNER_HOOK" ] && [ -f "$INNER_HOOK" ]; then
+    # Back-compat path: explicit single-file inner handler via env var.
     if [ -z "$INNER_INTERP" ] && [ "${INNER_HOOK##*.}" = "js" ]; then
         INNER_INTERP="node"
     fi
@@ -48,6 +50,18 @@ if [ -n "$INNER_HOOK" ] && [ -f "$INNER_HOOK" ]; then
         "$INNER_HOOK" "$@" &
     fi
     INNER_PID=$!
+elif [ -s "$INNER_ARGV_FILE" ]; then
+    # Auto-chain: installer persisted the previous notify argv tokens here,
+    # so users don't have to export DMUX_CODEX_INNER themselves.
+    INNER_ARGV=()
+    while IFS= read -r _line || [ -n "$_line" ]; do
+        [ -z "$_line" ] && continue
+        INNER_ARGV+=("$_line")
+    done < "$INNER_ARGV_FILE"
+    if [ "${#INNER_ARGV[@]}" -gt 0 ]; then
+        "${INNER_ARGV[@]}" "$@" &
+        INNER_PID=$!
+    fi
 fi
 
 {
