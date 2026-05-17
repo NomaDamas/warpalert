@@ -1,5 +1,7 @@
 # Wmux
 
+> Created by **[@HaD0Yun](https://github.com/HaD0Yun)** · Maintained under [NomaDamas](https://github.com/NomaDamas)
+
 ### 🔔 Warp alert — native toasts when your AI agent finishes a turn.
 
 Works with **Claude Code**, **Codex CLI**, **OpenCode**, and **Gemini CLI**.
@@ -262,12 +264,4 @@ Each supported agent has a hook system that fires on lifecycle events (`SessionS
 
 ---
 
-## Author
-
-Created by **[HaD0Yun](https://github.com/HaD0Yun)**. Maintained under the [NomaDamas](https://github.com/NomaDamas) organization.
-
-Issues and PRs welcome at [NomaDamas/warpalert](https://github.com/NomaDamas/warpalert).
-
----
-
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Issues and PRs welcome at [NomaDamas/warpalert](https://github.com/NomaDamas/warpalert).
